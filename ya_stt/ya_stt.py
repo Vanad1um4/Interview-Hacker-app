@@ -7,16 +7,19 @@ import ya_stt.yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
 import ya_stt.yandex.cloud.ai.stt.v3.stt_service_pb2_grpc as stt_service_pb2_grpc
 import time
 
-from settings import API_KEY, FS, DURATION, CHANNELS, MAX_AUDIO_DURATION, MAX_DATA_SIZE
+from settings import API_KEY, FS, DURATION, CHANNELS, MAX_AUDIO_DURATION, MAX_DATA_SIZE, DEBUG
+from utils import write_to_file
 
-CHUNK_SIZE = FS * DURATION * CHANNELS * 2  # Размер чанка для отправки в Яндекс API# Словарь для хранения предложений
+CHUNK_SIZE = FS * DURATION * CHANNELS * 2  # Размер чанка для отправки в Яндекс API
 
 sentences_dict = {}
+current_timestamp = None
+
 audio_queue = queue.Queue(maxsize=10)  # Ограничение размера очереди, чтобы избежать переполнения
 stop_event = threading.Event()
 
-total_duration = 0
-total_data_size = 0
+total_duration = 0  # Чтобы не вылезти за лимиты Яндекс API, отслеживаем длительность сессии...
+total_data_size = 0  # ... и размер данных
 
 
 def record_audio():
@@ -34,7 +37,7 @@ def record_audio():
         try:
             audio_queue.put(recording, timeout=1)  # Используем timeout, чтобы избежать блокировки
         except queue.Full:
-            pass
+            write_to_file('errors.log', f"{int(time.time())}: Попытка записать в полную очередь.", add=True)
 
 
 def generate_audio_chunks():
@@ -82,23 +85,25 @@ def generate_audio_chunks():
             yield stt_pb2.StreamingRequest(chunk=stt_pb2.AudioChunk(data=audio_data))
 
     except Exception as e:
-        pass
+        write_to_file('errors.log', str(e), add=True)
 
 
 def transcribe_audio():
     while not stop_event.is_set():
         try:
             start_transcription_session()
-        except grpc._channel._Rendezvous as err:
+        except grpc.RpcError as e:
+            write_to_file('errors.log', str(e), add=True)
             time.sleep(0.1)
             if stop_event.is_set():
                 break
         except Exception as e:
+            write_to_file('errors.log', str(e), add=True)
             break
 
 
 def start_transcription_session():
-    global total_data_size, total_duration
+    global total_data_size, total_duration, current_timestamp
 
     try:
         cred = grpc.ssl_channel_credentials()
@@ -111,14 +116,19 @@ def start_transcription_session():
             ))
 
             for res in response_iterator:
+                if DEBUG:
+                    write_to_file('res.log', res, add=True)
+
                 if stop_event.is_set():
                     break
 
                 event_type, alternatives = res.WhichOneof('Event'), None
-                timestamp = time.time() * 1000
+
+                if current_timestamp is None or event_type == 'final_refinement':
+                    current_timestamp = int(time.time() * 1000)
 
                 if event_type in ['partial', 'final', 'final_refinement']:
-                    sentences_dict[timestamp] = {"words": {}, "sentence": ""}
+                    sentences_dict[current_timestamp] = {"words": {}, "sentence": ""}
 
                     if event_type == 'partial' and len(res.partial.alternatives) > 0:
                         alternatives = res.partial.alternatives[0]
@@ -129,17 +139,22 @@ def start_transcription_session():
 
                     if alternatives:
                         for word in alternatives.words:
-                            sentences_dict[timestamp]["words"][word.start_time_ms] = word.text
-                        sentences_dict[timestamp]["sentence"] = alternatives.text
+                            sentences_dict[current_timestamp]["words"][word.start_time_ms] = word.text
+                        sentences_dict[current_timestamp]["sentence"] = alternatives.text
 
-    except grpc.RpcError as e:
+                    if DEBUG:
+                        write_to_file('sentences.json', sentences_dict, add=False)
+
+    except grpc.RpcError:
         raise
-    except Exception as e:
+    except Exception:
         raise
 
 
-def start_recording():
+def stt_start_recording():
+    global current_timestamp
     stop_event.clear()
+    current_timestamp = None  # Сброс таймстэмпа
     record_thread = threading.Thread(target=record_audio)
     transcribe_thread = threading.Thread(target=transcribe_audio)
 
@@ -148,7 +163,7 @@ def start_recording():
     return record_thread, transcribe_thread
 
 
-def stop_recording(record_thread, transcribe_thread):
+def stt_stop_recording(record_thread, transcribe_thread):
     stop_event.set()
     if record_thread.is_alive():
         record_thread.join()
@@ -156,5 +171,8 @@ def stop_recording(record_thread, transcribe_thread):
         transcribe_thread.join()
 
 
-def get_results():
-    return sentences_dict
+def stt_get_results():
+    if sentences_dict:
+        latest_timestamp = list(sentences_dict.keys())[-1]
+        return {latest_timestamp: sentences_dict[latest_timestamp]}
+    return {}
