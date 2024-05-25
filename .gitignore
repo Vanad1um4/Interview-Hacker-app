@@ -1,5 +1,5 @@
 __pycache__
-settings.py
+env.py
 main.db
 res.log
 errors.log

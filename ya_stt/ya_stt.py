@@ -7,7 +7,7 @@ import ya_stt.yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
 import ya_stt.yandex.cloud.ai.stt.v3.stt_service_pb2_grpc as stt_service_pb2_grpc
 import time
 
-from settings import API_KEY, FS, DURATION, CHANNELS, MAX_AUDIO_DURATION, MAX_DATA_SIZE, DEBUG
+from env import API_KEY, FS, DURATION, CHANNELS, MAX_AUDIO_DURATION, MAX_DATA_SIZE, DEBUG
 from utils import write_to_file
 
 CHUNK_SIZE = FS * DURATION * CHANNELS * 2  # Размер чанка для отправки в Яндекс API

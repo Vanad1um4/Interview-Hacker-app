@@ -68,7 +68,7 @@ def db_get_sentences_only():
     return results
 
 
-def db_get_last_sentences_only(last_N_minutes):
+def db_get_last_sentences(last_N_minutes):
     current_time = time.time() * 1000
     time_threshold = current_time - (last_N_minutes * 60 * 1000)
 

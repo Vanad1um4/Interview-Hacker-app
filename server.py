@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 
 import main
 import debug
-from settings import APP_IP, APP_PORT
+from env import APP_IP, APP_PORT
 
 app = FastAPI()
 
