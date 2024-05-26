@@ -4,7 +4,7 @@ import json
 import asyncio
 
 from ya_stt.ya_stt import stt_start_recording, stt_stop_recording, stt_get_results
-from db import db_save_result_to_db, db_get_last_sentences
+from db import db_save_result_to_db, db_get_last_sentences, db_get_settings
 
 clients = []
 record_thread = None
@@ -64,7 +64,9 @@ async def stop_recognition():
 
 @router.get('/get_last_sentences')
 async def get_last_sentences():
-    sentences = db_get_last_sentences(last_N_minutes=30)
+    settings = db_get_settings()
+    last_N_minutes = settings.get('initLoadLastNMinutes') or 30
+    sentences = db_get_last_sentences(last_N_minutes=last_N_minutes)
     return JSONResponse(content={'last_sentences': sentences})
 
 

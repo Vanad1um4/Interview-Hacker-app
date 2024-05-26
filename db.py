@@ -6,16 +6,35 @@ import time
 def db_init():
     conn = sqlite3.connect('main.db')
     cursor = conn.cursor()
-    sql = '''
+
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS sentences (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp INTEGER NOT NULL,
             words TEXT NOT NULL,
             sentence TEXT NOT NULL
-        )'''
-    cursor.execute(sql)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS settings (
+            dark_theme BOOLEAN NOT NULL DEFAULT 0,
+            init_load_last_n_minutes INTEGER NOT NULL DEFAULT 10,
+            main_prompt TEXT NOT NULL DEFAULT ''
+        )
+    ''')
+
+    cursor.execute('''
+        INSERT INTO settings (dark_theme, init_load_last_n_minutes, main_prompt)
+        SELECT 0, 10, ''
+        WHERE NOT EXISTS (SELECT 1 FROM settings)
+    ''')
+
     conn.commit()
     conn.close()
+
+
+db_init()
 
 
 db_init()
@@ -80,3 +99,40 @@ def db_get_last_sentences(last_N_minutes):
     conn.close()
 
     return results
+
+
+def db_get_settings():
+    conn = sqlite3.connect('main.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT dark_theme, init_load_last_n_minutes, main_prompt FROM settings LIMIT 1')
+    row = cursor.fetchone()
+    settings = {
+        'darkTheme': bool(row[0]),
+        'initLoadLastNMinutes': row[1],
+        'mainPrompt': row[2]
+    }
+    conn.close()
+
+    return settings
+
+
+def db_save_dark_theme(dark_theme):
+    conn = sqlite3.connect('main.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE settings
+        SET dark_theme = ?
+    ''', (dark_theme,))
+    conn.commit()
+    conn.close()
+
+
+def db_save_settings(settings):
+    conn = sqlite3.connect('main.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE settings
+        SET init_load_last_n_minutes = ?, main_prompt = ?
+    ''', (settings['initLoadLastNMinutes'], settings['mainPrompt']))
+    conn.commit()
+    conn.close()
