@@ -1,10 +1,12 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import JSONResponse
-import json
 import asyncio
+import time
 
-from ya_stt.ya_stt import stt_start_recording, stt_stop_recording, stt_get_results
 from db import db_save_result_to_db, db_get_last_sentences, db_get_settings
+from ya_stt.ya_stt import stt_start_recording, stt_stop_recording, stt_get_results
+from chatgpt import get_openai_response
+from utils import write_to_file
 
 clients = []
 record_thread = None
@@ -12,6 +14,23 @@ transcribe_thread = None
 recognition_in_progress = False
 
 router = APIRouter()
+
+
+async def send_to_all_clients_via_ws(data):
+    for client in clients:
+        await client.send_json(data)
+
+
+async def transcribe_audio(record_thread, transcribe_thread):
+    while record_thread.is_alive() and transcribe_thread.is_alive():
+        sentence_dict = stt_get_results()
+        ts, data = sentence_dict.popitem() if sentence_dict else (None, None)
+
+        if ts and data and 'sentence' in data and data['words']:  # filtering out empty results
+            db_save_result_to_db(ts, data)
+            await send_to_all_clients_via_ws({'recognition': {ts: data['sentence']}})
+
+        await asyncio.sleep(0.1)
 
 
 @router.websocket('/ws')
@@ -33,7 +52,7 @@ async def websocket_endpoint(websocket: WebSocket):
         clients.remove(websocket)
 
 
-@router.get('/start')
+@router.get('/start', tags=['Main'])
 async def start_recognition():
     global record_thread, transcribe_thread, recognition_in_progress
 
@@ -46,7 +65,7 @@ async def start_recognition():
     return JSONResponse(content={'Recognition status': 'Started successfully'})
 
 
-@router.get('/stop')
+@router.get('/stop', tags=['Main'])
 async def stop_recognition():
     global record_thread, transcribe_thread, recognition_in_progress
 
@@ -62,23 +81,33 @@ async def stop_recognition():
     return JSONResponse(content={'Recognition status': 'Stopped successfully'})
 
 
-@router.get('/get_last_sentences')
+@router.get('/get_last_sentences', tags=['Main'])
 async def get_last_sentences():
     settings = db_get_settings()
-    last_N_minutes = settings.get('initLoadLastNMinutes') or 30
-    sentences = db_get_last_sentences(last_N_minutes=last_N_minutes)
+    last_minutes = settings.get('initLoadLastNMinutes')
+    sentences = db_get_last_sentences(last_minutes)
     return JSONResponse(content={'last_sentences': sentences})
 
 
-async def transcribe_audio(record_thread, transcribe_thread):
-    while record_thread.is_alive() and transcribe_thread.is_alive():
-        sentence_dict = stt_get_results()
-        ts, data = sentence_dict.popitem() if sentence_dict else (None, None)
+@router.get('/infer/{last_minutes}', tags=['Inference'])
+async def infer(last_minutes: int):
+    sentences_dict = db_get_last_sentences(last_minutes)
 
-        if ts and data and 'sentence' in data and data['words']:  # not saving empty results
-            db_save_result_to_db(ts, data)
+    if not sentences_dict:
+        await send_to_all_clients_via_ws({'inference': {'status': 'no start'}})
+        return
 
-            for client in clients:
-                await client.send_json({'sentence': {ts: data['sentence']}})
+    settings = db_get_settings()
+    prompt = settings.get('mainPrompt')
+    sentences = ' '.join(sentences_dict.values())
 
-        await asyncio.sleep(0.1)
+    try:
+        await send_to_all_clients_via_ws({'inference': {'status': 'start'}})
+
+        async for chunk in get_openai_response(prompt, sentences):
+            if chunk:
+                await send_to_all_clients_via_ws({'inference': {'data': chunk}})
+
+        await send_to_all_clients_via_ws({'inference': {'status': 'end'}})
+    except Exception as e:
+        write_to_file('errors.log', f'{int(time.time())}: Ошибка генерации: {str(e)}', add=True)

@@ -1,5 +1,4 @@
 import sqlite3
-import json
 import time
 
 
@@ -11,30 +10,23 @@ def db_init():
         CREATE TABLE IF NOT EXISTS sentences (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp INTEGER NOT NULL,
-            words TEXT NOT NULL,
             sentence TEXT NOT NULL
-        )
-    ''')
+        )''')
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
             dark_theme BOOLEAN NOT NULL DEFAULT 0,
             init_load_last_n_minutes INTEGER NOT NULL DEFAULT 10,
             main_prompt TEXT NOT NULL DEFAULT ''
-        )
-    ''')
+        )''')
 
     cursor.execute('''
         INSERT INTO settings (dark_theme, init_load_last_n_minutes, main_prompt)
-        SELECT 0, 10, ''
-        WHERE NOT EXISTS (SELECT 1 FROM settings)
-    ''')
+        SELECT 0, 30, ''
+        WHERE NOT EXISTS (SELECT 1 FROM settings)''')
 
     conn.commit()
     conn.close()
-
-
-db_init()
 
 
 db_init()
@@ -50,16 +42,14 @@ def db_save_result_to_db(ts, data):
     if exists:
         sql = '''
             UPDATE sentences
-            SET words = ?, sentence = ?
-            WHERE timestamp = ?
-        '''
-        cursor.execute(sql, (json.dumps(data['words'], ensure_ascii=False), data['sentence'], ts))
+            SET sentence = ?
+            WHERE timestamp = ?'''
+        cursor.execute(sql, (data['sentence'], ts))
     else:
         sql = '''
-            INSERT INTO sentences (timestamp, words, sentence)
-            VALUES (?, ?, ?)
-        '''
-        cursor.execute(sql, (ts, json.dumps(data['words'], ensure_ascii=False), data['sentence']))
+            INSERT INTO sentences (timestamp, sentence)
+            VALUES (?, ?)'''
+        cursor.execute(sql, (ts, data['sentence']))
 
     conn.commit()
     conn.close()
@@ -68,9 +58,9 @@ def db_save_result_to_db(ts, data):
 def db_get_everything():
     conn = sqlite3.connect('main.db')
     cursor = conn.cursor()
-    cursor.execute('SELECT id, timestamp, words, sentence FROM sentences')
+    cursor.execute('SELECT id, timestamp, sentence FROM sentences')
     rows = cursor.fetchall()
-    results = [{'id': row[0], 'timestamp': row[1], 'words': json.loads(row[2]), 'sentence': row[3]} for row in rows]
+    results = [{'id': row[0], 'timestamp': row[1], 'sentence': row[2]} for row in rows]
     conn.close()
 
     return results
@@ -87,9 +77,9 @@ def db_get_sentences_only():
     return results
 
 
-def db_get_last_sentences(last_N_minutes):
+def db_get_last_sentences(last_minutes):
     current_time = time.time() * 1000
-    time_threshold = current_time - (last_N_minutes * 60 * 1000)
+    time_threshold = current_time - (last_minutes * 60 * 1000)
 
     conn = sqlite3.connect('main.db')
     cursor = conn.cursor()
@@ -99,6 +89,37 @@ def db_get_last_sentences(last_N_minutes):
     conn.close()
 
     return results
+
+
+def db_update_sentence_by_id(record_id, new_sentence):
+    conn = sqlite3.connect('main.db')
+    cursor = conn.cursor()
+    sql = '''
+        UPDATE sentences
+        SET sentence = ?
+        WHERE id = ?'''
+    cursor.execute(sql, (new_sentence, record_id))
+    conn.commit()
+    conn.close()
+
+
+def db_delete_all_sentences():
+    conn = sqlite3.connect('main.db')
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM sentences')
+    conn.commit()
+    conn.close()
+
+
+def db_delete_sentence_by_id(record_id):
+    conn = sqlite3.connect('main.db')
+    cursor = conn.cursor()
+    sql = '''
+        DELETE FROM sentences
+        WHERE id = ?'''
+    cursor.execute(sql, (record_id,))
+    conn.commit()
+    conn.close()
 
 
 def db_get_settings():
@@ -119,10 +140,10 @@ def db_get_settings():
 def db_save_dark_theme(dark_theme):
     conn = sqlite3.connect('main.db')
     cursor = conn.cursor()
-    cursor.execute('''
+    sql = '''
         UPDATE settings
-        SET dark_theme = ?
-    ''', (dark_theme,))
+        SET dark_theme = ?'''
+    cursor.execute(sql, (dark_theme,))
     conn.commit()
     conn.close()
 
@@ -130,9 +151,9 @@ def db_save_dark_theme(dark_theme):
 def db_save_settings(settings):
     conn = sqlite3.connect('main.db')
     cursor = conn.cursor()
-    cursor.execute('''
+    sql = '''
         UPDATE settings
-        SET init_load_last_n_minutes = ?, main_prompt = ?
-    ''', (settings['initLoadLastNMinutes'], settings['mainPrompt']))
+        SET dark_theme = ?, init_load_last_n_minutes = ?, main_prompt = ?'''
+    cursor.execute(sql, (settings['darkTheme'], settings['initLoadLastNMinutes'], settings['mainPrompt']))
     conn.commit()
     conn.close()

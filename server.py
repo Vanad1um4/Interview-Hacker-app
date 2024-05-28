@@ -22,7 +22,7 @@ app.include_router(main.router, prefix='/api/main')
 app.include_router(debug.router, prefix='/api/debug')
 app.include_router(settings.router, prefix='/api/settings')
 
-app.mount('/', StaticFiles(directory='front-src', html=True), name="static")
+app.mount('/', StaticFiles(directory='front-src', html=True), name='static')
 
 if __name__ == '__main__':
     uvicorn.run(app, host=f'{APP_IP}', port=APP_PORT)

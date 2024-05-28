@@ -7,7 +7,7 @@ import ya_stt.yandex.cloud.ai.stt.v3.stt_pb2 as stt_pb2
 import ya_stt.yandex.cloud.ai.stt.v3.stt_service_pb2_grpc as stt_service_pb2_grpc
 import time
 
-from env import API_KEY, FS, DURATION, CHANNELS, MAX_AUDIO_DURATION, MAX_DATA_SIZE, DEBUG
+from env import STT_API_KEY, FS, DURATION, CHANNELS, MAX_AUDIO_DURATION, MAX_DATA_SIZE, DEBUG
 from utils import write_to_file
 
 CHUNK_SIZE = FS * DURATION * CHANNELS * 2  # Размер чанка для отправки в Яндекс API
@@ -37,7 +37,7 @@ def record_audio():
         try:
             audio_queue.put(recording, timeout=1)  # Используем timeout, чтобы избежать блокировки
         except queue.Full:
-            write_to_file('errors.log', f"{int(time.time())}: Попытка записать в полную очередь.", add=True)
+            write_to_file('errors.log', f'{int(time.time())}: Попытка записать в полную очередь.', add=True)
 
 
 def generate_audio_chunks():
@@ -112,7 +112,7 @@ def start_transcription_session():
 
         while not stop_event.is_set():
             response_iterator = stub.RecognizeStreaming(generate_audio_chunks(), metadata=(
-                ('authorization', f'Api-Key {API_KEY}'),
+                ('authorization', f'Api-Key {STT_API_KEY}'),
             ))
 
             for res in response_iterator:
@@ -128,7 +128,7 @@ def start_transcription_session():
                     current_timestamp = int(time.time() * 1000)
 
                 if event_type in ['partial', 'final', 'final_refinement']:
-                    sentences_dict[current_timestamp] = {"words": {}, "sentence": ""}
+                    sentences_dict[current_timestamp] = {'words': {}, 'sentence': ''}
 
                     if event_type == 'partial' and len(res.partial.alternatives) > 0:
                         alternatives = res.partial.alternatives[0]
@@ -139,8 +139,8 @@ def start_transcription_session():
 
                     if alternatives:
                         for word in alternatives.words:
-                            sentences_dict[current_timestamp]["words"][word.start_time_ms] = word.text
-                        sentences_dict[current_timestamp]["sentence"] = alternatives.text
+                            sentences_dict[current_timestamp]['words'][word.start_time_ms] = word.text
+                        sentences_dict[current_timestamp]['sentence'] = alternatives.text
 
                     if DEBUG:
                         write_to_file('sentences.json', sentences_dict, add=False)
@@ -154,7 +154,7 @@ def start_transcription_session():
 def stt_start_recording():
     global current_timestamp
     stop_event.clear()
-    current_timestamp = None  # Сброс таймстэмпа
+    current_timestamp = None
     record_thread = threading.Thread(target=record_audio)
     transcribe_thread = threading.Thread(target=transcribe_audio)
 
