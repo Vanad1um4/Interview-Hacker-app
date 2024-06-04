@@ -106,6 +106,7 @@ async def infer(last_minutes: int):
 
         async for chunk in get_openai_response(prompt, sentences):
             if chunk:
+                await asyncio.sleep(0.001)
                 await send_to_all_clients_via_ws({'inference': {'data': chunk}})
 
         await send_to_all_clients_via_ws({'inference': {'status': 'end'}})
